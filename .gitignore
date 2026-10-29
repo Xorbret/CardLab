@@ -1,3 +1,4 @@
 .pio/
 .vscode/
 *.bin
+!data/cert/x509_crt_bundle.bin

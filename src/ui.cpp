@@ -29,17 +29,26 @@ Key poll() {
   Key k;
   if (!M5Cardputer.Keyboard.isChange() || !M5Cardputer.Keyboard.isPressed()) return k;
   const auto& s = M5Cardputer.Keyboard.keysState();
-  if (s.esc) k.type = Key::Esc;
-  else if (s.up) k.type = Key::Up;
-  else if (s.down) k.type = Key::Down;
-  else if (s.left) k.type = Key::Left;
-  else if (s.right) k.type = Key::Right;
-  else if (s.enter) k.type = Key::Enter;
-  else if (s.backspace || s.del) k.type = Key::Backspace;
+  char c = s.word.empty() ? 0 : s.word.front();
+  if (s.fn) {
+    // M5Cardputer 1.1.1 reports fn combos as fn + the plain character.
+    switch (c) {
+      case ';': k.type = Key::Up; break;
+      case '.': k.type = Key::Down; break;
+      case ',': k.type = Key::Left; break;
+      case '/': k.type = Key::Right; break;
+      case '`': k.type = Key::Esc; break;
+      default: break;
+    }
+    if (k.type == Key::None && s.del) k.type = Key::Backspace;
+    return k;
+  }
+  if (s.enter) k.type = Key::Enter;
+  else if (s.del) k.type = Key::Backspace;  // the backspace key
   else if (s.tab) k.type = Key::Tab;
-  else if (!s.word.empty()) {
+  else if (c != 0) {
     k.type = Key::Char;
-    k.c = s.word.front();
+    k.c = c;
   }
   return k;
 }

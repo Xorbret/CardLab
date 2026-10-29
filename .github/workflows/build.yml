@@ -42,9 +42,11 @@ jobs:
           BOOT_APP0=$(find ~/.platformio/packages/framework-arduinoespressif32 -name boot_app0.bin | head -1)
           python -m esptool --chip esp32s3 merge_bin -o cardlab.bin \
             0x0 $B/bootloader.bin 0x8000 $B/partitions.bin 0xe000 "$BOOT_APP0" 0x10000 $B/firmware.bin
+          cp $B/firmware.bin cardlab-app.bin
       - uses: actions/upload-artifact@v4
         with:
           name: cardlab-firmware
           path: |
             cardlab.bin
+            cardlab-app.bin
             content/

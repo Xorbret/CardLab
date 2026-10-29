@@ -13,6 +13,14 @@ constexpr const char* kUserDir = "/cardlab/user";
 constexpr const char* kProgressFile = "/cardlab/progress.txt";
 constexpr const char* kExportFile = "/cardlab/progress.json";
 constexpr const char* kAgreedFile = "/cardlab/agreed.txt";
+// Wi-Fi name and password, one per line. Stored in plain text, like most
+// IoT devices do (a talking point for the storage lessons).
+constexpr const char* kWifiFile = "/cardlab/wifi.txt";
+constexpr const char* kContentVersionFile = "/cardlab/content-version.txt";
+// Optional: first line overrides where content updates come from.
+constexpr const char* kUpdateUrlFile = "/cardlab/update-url.txt";
+constexpr const char* kDefaultPackUrl =
+    "https://github.com/Xorbret/CardLab/releases/download/dev-build/cardlab-content.pack";
 
 class CardputerHal : public Hal {
  public:
@@ -24,6 +32,14 @@ class CardputerHal : public Hal {
   bool writeAbsolute(const char* path, const std::string& data);
   bool exists(const char* path);
   std::vector<std::string> listLua(const char* dir);  // sorted full paths
+  void ensureDir(const char* path);
+
+  // Station-mode connection for downloads; wifiOff() frees the radio.
+  bool wifiConnect(const std::string& ssid, const std::string& password, uint32_t timeoutMs);
+  void wifiOff();
+  // HTTPS GET, verified against the built-in root CA bundle. Follows
+  // redirects. Fails if the body is larger than maxBytes.
+  bool httpsGet(const std::string& url, std::string& out, size_t maxBytes, std::string& err);
 
   void displayClear() override;
   void displayPrint(const std::string& text) override;

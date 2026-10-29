@@ -9,7 +9,8 @@ CardLab turns an M5Stack Cardputer ADV into a pocket lab for moving from IT Help
 - **Lessons** on the built-in hardware: networking basics, the motion sensor, the I2C bus, GPIO pins on the Grove port, and passive Wi-Fi recon.
 - **Defend the Network**: a turn-based Blue Team game. Red Team attacks a simulated office; you investigate symptoms, spend action points on evidence, and choose a response. Each round reveals the attack, what it targeted, and why your defense worked. Nothing is transmitted.
 - **Lua console** with access to the hardware modules.
-- **Tools**: I2C scan, passive Wi-Fi scan, and progress export to JSON for a portfolio.
+- **Tools**: I2C scan, passive Wi-Fi scan, Wi-Fi setup, and progress export to JSON for a portfolio.
+- **Update lessons**: downloads the latest lessons and scenarios over Wi-Fi (HTTPS, checked against the built-in root certificates). Files that fail to load are skipped.
 
 ## Getting started
 
@@ -17,7 +18,13 @@ CardLab turns an M5Stack Cardputer ADV into a pocket lab for moving from IT Help
 2. Build and flash: `pio run -e cardputer-adv -t upload`
 3. Copy the `content/` folder to a microSD card as `/cardlab` (so you have `/cardlab/lessons` and `/cardlab/scenarios`), insert it, and restart.
 
-Prebuilt images come from the **Build** workflow on GitHub Actions (`cardlab-firmware` artifact). `cardlab.bin` is a merged image you can flash at offset `0x0` with M5Burner or esptool.
+Prebuilt files are on the [dev-build release](https://github.com/Xorbret/CardLab/releases/tag/dev-build), updated by CI on every build:
+
+- `cardlab-app.bin`: app image for M5Launcher.
+- `cardlab.bin`: full image to flash at `0x0` with M5Burner or esptool.
+- `cardlab-sd.zip`: unzip to the SD card root.
+
+After the first install, set up Wi-Fi under **Tools** and use **Update lessons** to pull new content without touching the SD card. To use your own content source, put an `https://` URL to a pack (built with `tools/make_pack.py`) on the first line of `/cardlab/update-url.txt`.
 
 ### Keys
 

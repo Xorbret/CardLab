@@ -49,6 +49,9 @@ class App {
   void showRound(std::shared_ptr<Game> game);
   void pushRoundMenu(std::shared_ptr<Game> game);
   void openTools();
+  void setupWifi();
+  void askWifiPassword(const std::string& ssid);
+  void runUpdate();
   void showError(const std::string& title, const std::string& message);
 
   CardputerHal hal_;
@@ -106,6 +109,22 @@ class EditorView : public View {
   std::vector<std::string> lines_;
   std::function<void(const std::string&)> onRun_;
   int row_ = 0, col_ = 0, top_ = 0;
+};
+
+// Single-line text entry. Enter calls onDone(text); Esc pops. Masked input
+// shows asterisks; Tab toggles showing the text.
+class InputView : public View {
+ public:
+  InputView(App& app, std::string title, std::string prompt, bool masked,
+            std::function<void(const std::string&)> onDone);
+  void draw() override;
+  void key(const Key& k) override;
+
+ private:
+  App& app_;
+  std::string title_, prompt_, text_;
+  bool masked_;
+  std::function<void(const std::string&)> onDone_;
 };
 
 // One-line Lua prompt with scrolling output. Enter runs the line.

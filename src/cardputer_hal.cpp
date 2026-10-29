@@ -4,6 +4,8 @@
 #include <SD.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <esp_crt_bundle.h>
+#include <esp_http_client.h>
 
 #include <algorithm>
 
@@ -31,6 +33,25 @@ const char* authName(wifi_auth_mode_t mode) {
   }
 }
 
+struct HttpSink {
+  std::string* out;
+  size_t max;
+  bool overflow;
+};
+
+esp_err_t onHttpEvent(esp_http_client_event_t* e) {
+  if (e->event_id != HTTP_EVENT_ON_DATA) return ESP_OK;
+  // Skip bodies of redirect responses; only keep the final 200 body.
+  if (esp_http_client_get_status_code(e->client) != 200) return ESP_OK;
+  HttpSink* sink = static_cast<HttpSink*>(e->user_data);
+  if (sink->out->size() + e->data_len > sink->max) {
+    sink->overflow = true;
+    return ESP_FAIL;
+  }
+  sink->out->append(static_cast<const char*>(e->data), e->data_len);
+  return ESP_OK;
+}
+
 }  // namespace
 
 bool CardputerHal::begin() {
@@ -38,9 +59,70 @@ bool CardputerHal::begin() {
   sdReady_ = SD.begin(kSdCs, SPI, 25000000);
   if (sdReady_) {
     if (!SD.exists(kRootDir)) SD.mkdir(kRootDir);
-    if (!SD.exists(kUserDir)) SD.mkdir(kUserDir);
+    ensureDir(kUserDir);
+    ensureDir(kLessonDir);
+    ensureDir(kScenarioDir);
   }
   return sdReady_;
+}
+
+void CardputerHal::ensureDir(const char* path) {
+  if (sdReady_ && !SD.exists(path)) SD.mkdir(path);
+}
+
+bool CardputerHal::wifiConnect(const std::string& ssid, const std::string& password, uint32_t timeoutMs) {
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid.c_str(), password.empty() ? nullptr : password.c_str());
+  uint32_t start = ::millis();
+  while (WiFi.status() != WL_CONNECTED) {
+    if (::millis() - start > timeoutMs) {
+      wifiOff();
+      return false;
+    }
+    ::delay(100);
+  }
+  return true;
+}
+
+void CardputerHal::wifiOff() {
+  WiFi.disconnect(true);
+  WiFi.mode(WIFI_OFF);
+}
+
+bool CardputerHal::httpsGet(const std::string& url, std::string& out, size_t maxBytes, std::string& err) {
+  out.clear();
+  HttpSink sink{&out, maxBytes, false};
+  esp_http_client_config_t cfg = {};
+  cfg.url = url.c_str();
+  cfg.crt_bundle_attach = esp_crt_bundle_attach;
+  cfg.event_handler = onHttpEvent;
+  cfg.user_data = &sink;
+  cfg.max_redirection_count = 5;
+  cfg.timeout_ms = 20000;
+  // GitHub release downloads redirect to long signed URLs.
+  cfg.buffer_size = 4096;
+  cfg.buffer_size_tx = 4096;
+  esp_http_client_handle_t client = esp_http_client_init(&cfg);
+  if (client == nullptr) {
+    err = "could not start HTTP client";
+    return false;
+  }
+  esp_err_t res = esp_http_client_perform(client);
+  int status = esp_http_client_get_status_code(client);
+  esp_http_client_cleanup(client);
+  if (sink.overflow) {
+    err = "download too large";
+    return false;
+  }
+  if (res != ESP_OK) {
+    err = std::string("download failed: ") + esp_err_to_name(res);
+    return false;
+  }
+  if (status != 200) {
+    err = "server answered HTTP " + std::to_string(status);
+    return false;
+  }
+  return true;
 }
 
 bool CardputerHal::readAbsolute(const char* path, std::string& out) {

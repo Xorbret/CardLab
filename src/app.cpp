@@ -1,5 +1,7 @@
 #include "app.h"
 
+#include "pack.h"
+
 #include <M5Cardputer.h>
 
 #include <algorithm>
@@ -84,13 +86,15 @@ void App::showError(const std::string& title, const std::string& message) {
 }
 
 void App::showMainMenu() {
-  std::vector<std::string> items = {"Lessons", "Defend the Network", "Lua console", "Tools", "Rules and about"};
+  std::vector<std::string> items = {"Lessons", "Defend the Network", "Lua console", "Tools", "Update lessons",
+                                    "Rules and about"};
   auto menu = std::unique_ptr<MenuView>(new MenuView(*this, "CardLab", items, [this](int i) {
     switch (i) {
       case 0: openLessons(); break;
       case 1: openScenarios(); break;
       case 2: push(std::unique_ptr<View>(new ConsoleView(*this))); break;
       case 3: openTools(); break;
+      case 4: runUpdate(); break;
       default: showError("Rules and about", kRules); break;
     }
   }));
@@ -107,7 +111,7 @@ void App::openLessons() {
   }
   auto paths = std::make_shared<std::vector<std::string>>(hal_.listLua(kLessonDir));
   if (paths->empty()) {
-    showError("No lessons", std::string("No .lua files in ") + kLessonDir);
+    showError("No lessons", std::string("No .lua files in ") + kLessonDir + ". Use Update lessons on the main menu.");
     return;
   }
   std::vector<std::string> items;
@@ -209,7 +213,7 @@ void App::openScenarios() {
     return;
   }
   auto paths = std::make_shared<std::vector<std::string>>(hal_.listLua(kScenarioDir));
-  if (paths->empty()) return showError("No scenarios", std::string("No .lua files in ") + kScenarioDir);
+  if (paths->empty()) return showError("No scenarios", std::string("No .lua files in ") + kScenarioDir + ". Use Update lessons on the main menu.");
   std::vector<std::string> items;
   for (const std::string& p : *paths) {
     std::string src, err, label = fileStem(p);
@@ -301,7 +305,8 @@ void App::pushRoundMenu(std::shared_ptr<Game> game) {
 // Tools ---------------------------------------------------------------------
 
 void App::openTools() {
-  std::vector<std::string> items = {"I2C scan (Grove)", "Wi-Fi scan (passive)", "Export progress JSON"};
+  std::vector<std::string> items = {"I2C scan (Grove)", "Wi-Fi scan (passive)", "Export progress JSON",
+                                    "Wi-Fi setup (for updates)"};
   push(std::unique_ptr<View>(new MenuView(*this, "Tools", items, [this](int i) {
     if (i == 0) {
       std::string text;
@@ -319,11 +324,136 @@ void App::openTools() {
         text += n.ssid + "\n  " + n.auth + " ch" + std::to_string(n.channel) + " " + std::to_string(n.rssi) + "dBm\n";
       }
       showError("Wi-Fi networks", text.empty() ? "No networks found." : text);
+    } else if (i == 3) {
+      setupWifi();
     } else {
       bool ok = hal_.writeAbsolute(kExportFile, progress_.toJson());
       showError("Export", ok ? std::string("Saved to ") + kExportFile : "Could not write to the SD card.");
     }
   })));
+}
+
+// Wi-Fi setup and content updates -------------------------------------------
+
+void App::setupWifi() {
+  if (!hal_.sdReady()) return showError("No SD card", "Wi-Fi settings are saved on the SD card.");
+  ui::clear();
+  ui::title("Scanning...");
+  auto names = std::make_shared<std::vector<std::string>>();
+  for (const WifiNetwork& n : hal_.wifiScan()) {
+    if (n.ssid != "(hidden)") names->push_back(n.ssid);
+  }
+  std::vector<std::string> items = *names;
+  items.push_back("> Type a network name");
+  push(std::unique_ptr<View>(new MenuView(*this, "Pick your Wi-Fi", items, [this, names](int i) {
+    if (i < static_cast<int>(names->size())) return askWifiPassword(names->at(i));
+    push(std::unique_ptr<View>(new InputView(*this, "Wi-Fi setup", "Network name:", false,
+                                             [this](const std::string& ssid) {
+                                               pop();
+                                               if (!ssid.empty()) askWifiPassword(ssid);
+                                             })));
+  })));
+}
+
+void App::askWifiPassword(const std::string& ssid) {
+  push(std::unique_ptr<View>(new InputView(*this, ssid, "Password (blank if open):", true,
+                                           [this, ssid](const std::string& password) {
+    pop(2);  // password entry and the network list
+    ui::clear();
+    ui::title("Connecting...");
+    bool ok = hal_.wifiConnect(ssid, password, 15000);
+    hal_.wifiOff();
+    if (!ok) return showError("Wi-Fi", "Could not connect to " + ssid + ". Check the password and try again.");
+    hal_.writeAbsolute(kWifiFile, ssid + "\n" + password + "\n");
+    showError("Wi-Fi", "Connected and saved. Use Update lessons from the main menu.");
+  })));
+}
+
+void App::runUpdate() {
+  if (!hal_.sdReady()) return showError("No SD card", "Updates are saved on the SD card.");
+  std::string creds;
+  if (!hal_.readAbsolute(kWifiFile, creds)) {
+    return showError("Update", "Set up Wi-Fi first: Tools > Wi-Fi setup.");
+  }
+  size_t nl = creds.find('\n');
+  std::string ssid = creds.substr(0, nl);
+  std::string password = nl == std::string::npos ? "" : creds.substr(nl + 1);
+  if (!password.empty() && password.back() == '\n') password.pop_back();
+
+  std::string url = kDefaultPackUrl, custom;
+  if (hal_.readAbsolute(kUpdateUrlFile, custom)) {
+    custom = custom.substr(0, custom.find_first_of("\r\n"));
+    if (custom.compare(0, 8, "https://") == 0) url = custom;
+  }
+
+  ui::clear();
+  ui::title("Connecting...");
+  if (!hal_.wifiConnect(ssid, password, 15000)) {
+    return showError("Update", "Could not connect to " + ssid + ". Run Tools > Wi-Fi setup again.");
+  }
+  ui::title("Downloading...");
+  std::string data, err;
+  bool ok = hal_.httpsGet(url, data, 128 * 1024, err);
+  hal_.wifiOff();
+  if (!ok) return showError("Update failed", err);
+
+  ui::title("Checking...");
+  Pack pack;
+  if (!parsePack(data, pack, err)) return showError("Update failed", err);
+  data.clear();
+  data.shrink_to_fit();
+
+  std::string current;
+  hal_.readAbsolute(kContentVersionFile, current);
+  int written = 0;
+  std::string skipped;
+  for (const PackFile& f : pack.files) {
+    // Only install files that load, so a bad file can't break the menus.
+    bool valid;
+    if (f.path.compare(0, 8, "lessons/") == 0) {
+      Lesson l(&hal_);
+      valid = l.load(f.data, err);
+    } else {
+      Scenario sc;
+      valid = loadScenario(&hal_, f.data, sc, err);
+    }
+    std::string dest = std::string(kRootDir) + "/" + f.path;
+    if (valid && hal_.writeAbsolute(dest.c_str(), f.data)) {
+      ++written;
+    } else {
+      skipped += "\n- " + f.path;
+    }
+  }
+  hal_.writeAbsolute(kContentVersionFile, pack.version + "\n");
+
+  std::string text = "Installed " + std::to_string(written) + " files.\nVersion: " + pack.version.substr(0, 12);
+  if (current.compare(0, pack.version.size(), pack.version) == 0) text += "\n(Already up to date.)";
+  if (!skipped.empty()) text += "\n\nSkipped (did not load):" + skipped;
+  showError("Update done", text);
+}
+
+// InputView -----------------------------------------------------------------
+
+InputView::InputView(App& app, std::string title, std::string prompt, bool masked,
+                     std::function<void(const std::string&)> onDone)
+    : app_(app), title_(std::move(title)), prompt_(std::move(prompt)), masked_(masked), onDone_(std::move(onDone)) {}
+
+void InputView::draw() {
+  ui::clear();
+  ui::title(title_);
+  ui::line(0, prompt_);
+  std::string shown = masked_ ? std::string(text_.size(), '*') : text_;
+  if (static_cast<int>(shown.size()) > ui::kCols - 1) shown = shown.substr(shown.size() - (ui::kCols - 1));
+  ui::line(1, shown + "_", true);
+  ui::hint("Enter OK  Tab show  fn+` back");
+}
+
+void InputView::key(const Key& k) {
+  if (k.type == Key::Esc) return app_.pop();
+  if (k.type == Key::Enter) return onDone_(text_);
+  if (k.type == Key::Tab) masked_ = !masked_;
+  else if (k.type == Key::Backspace && !text_.empty()) text_.pop_back();
+  else if (k.type == Key::Char && text_.size() < 64) text_ += k.c;
 }
 
 // MenuView ------------------------------------------------------------------

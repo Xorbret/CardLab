@@ -49,12 +49,14 @@ jobs:
         run: |
           mkdir -p sd && cp -r content sd/cardlab
           (cd sd && zip -qr ../cardlab-sd.zip cardlab)
+          python tools/make_pack.py content "${{ github.event.pull_request.head.sha || github.sha }}" cardlab-content.pack
       - uses: actions/upload-artifact@v4
         with:
           name: cardlab-firmware
           path: |
             cardlab.bin
             cardlab-app.bin
+            cardlab-content.pack
             content/
       # Release assets download directly in a phone browser, unlike Actions
       # artifacts. Skipped for pull requests from forks (no write token).
@@ -70,9 +72,11 @@ jobs:
             cardlab.bin
             cardlab-app.bin
             cardlab-sd.zip
+            cardlab-content.pack
           body: |
             Built from ${{ github.event.pull_request.head.sha || github.sha }}. Untested on hardware.
 
             - `cardlab-app.bin`: app image for M5Launcher.
             - `cardlab.bin`: full image, flash at 0x0 with M5Burner or esptool.
             - `cardlab-sd.zip`: unzip to the root of the SD card so you get `/cardlab/lessons` and `/cardlab/scenarios`.
+            - `cardlab-content.pack`: what the device's "Update lessons" menu downloads.

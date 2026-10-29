@@ -11,6 +11,7 @@
 
 #include "game.h"
 #include "lesson.h"
+#include "pack.h"
 #include "progress.h"
 #include "sandbox.h"
 
@@ -287,6 +288,41 @@ void test_progress_round_trip() {
       q.toJson().c_str());
 }
 
+// Content packs -----------------------------------------------------------
+
+void test_pack_parses_files() {
+  std::string text = "CARDLAB-PACK 1 abc123\nFILE lessons/a.lua 5\nhello\nFILE scenarios/s-1.lua 0\n\nEND\n";
+  Pack p;
+  std::string err;
+  TEST_ASSERT_TRUE_MESSAGE(parsePack(text, p, err), err.c_str());
+  TEST_ASSERT_EQUAL_STRING("abc123", p.version.c_str());
+  TEST_ASSERT_EQUAL(2, (int)p.files.size());
+  TEST_ASSERT_EQUAL_STRING("lessons/a.lua", p.files[0].path.c_str());
+  TEST_ASSERT_EQUAL_STRING("hello", p.files[0].data.c_str());
+  TEST_ASSERT_EQUAL_STRING("", p.files[1].data.c_str());
+}
+
+void test_pack_rejects_bad_input() {
+  Pack p;
+  std::string err;
+  TEST_ASSERT_FALSE(parsePack("<html>", p, err));
+  TEST_ASSERT_FALSE(parsePack("CARDLAB-PACK 1 v\nFILE lessons/a.lua 50\nshort\nEND\n", p, err));
+  TEST_ASSERT_FALSE(parsePack("CARDLAB-PACK 1 v\nFILE lessons/a.lua 1\nx\n", p, err));  // no END
+}
+
+void test_pack_paths_stay_in_content_folders() {
+  TEST_ASSERT_TRUE(packPathAllowed("lessons/t1-02-i2c.lua"));
+  TEST_ASSERT_TRUE(packPathAllowed("scenarios/s01.lua"));
+  TEST_ASSERT_FALSE(packPathAllowed("lessons/../progress.txt"));
+  TEST_ASSERT_FALSE(packPathAllowed("lessons/../../x.lua"));
+  TEST_ASSERT_FALSE(packPathAllowed("agreed.txt"));
+  TEST_ASSERT_FALSE(packPathAllowed("lessons/sub/x.lua"));
+  TEST_ASSERT_FALSE(packPathAllowed("lessons/x.txt"));
+  Pack p;
+  std::string err;
+  TEST_ASSERT_FALSE(parsePack("CARDLAB-PACK 1 v\nFILE ../agreed.lua 1\nx\nEND\n", p, err));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_sandbox_captures_print);
@@ -308,5 +344,8 @@ int main(int, char**) {
   RUN_TEST(test_game_round_flow);
   RUN_TEST(test_scenario_rejects_bad_result);
   RUN_TEST(test_progress_round_trip);
+  RUN_TEST(test_pack_parses_files);
+  RUN_TEST(test_pack_rejects_bad_input);
+  RUN_TEST(test_pack_paths_stay_in_content_folders);
   return UNITY_END();
 }

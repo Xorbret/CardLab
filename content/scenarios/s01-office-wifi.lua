@@ -1,0 +1,63 @@
+return {
+  id = "s01-office-wifi",
+  title = "Trouble on the office Wi-Fi",
+  briefing = "You are Blue Team for a 12-person office: one access point, a guest SSID, cameras and smart plugs. Red Team is somewhere nearby.",
+  points = 3,
+  rounds = {
+    {
+      symptom = "Every few minutes, all laptops and cameras drop off Wi-Fi at once and rejoin a few seconds later.",
+      damage = { uptime = 40, data = 0 },
+      evidence = {
+        { name = "AP event log", cost = 1,
+          text = "Hundreds of 'deauthenticated: reason 7' events, all claiming to come from the AP's own MAC address." },
+        { name = "Spectrum view", cost = 2,
+          text = "Channel is clean. No interference: something is sending valid-looking frames, not noise." },
+        { name = "ISP status page", cost = 1, text = "No outages reported." },
+      },
+      defenses = {
+        { name = "Enable 802.11w (protected management frames)", result = "stop",
+          text = "PMF signs management frames, so forged 'deauth' frames are ignored. WPA3 requires it." },
+        { name = "Change the Wi-Fi password", result = "fail",
+          text = "Deauth frames are not protected by the password on WPA2 without PMF, so this changes nothing." },
+        { name = "Move the AP to 5 GHz", result = "partial",
+          text = "Buys time if the attacker's gear is 2.4 GHz only, but the root cause is still there." },
+        { name = "Reboot the access point", result = "fail",
+          text = "The forged frames start again as soon as clients reconnect." },
+      },
+      reveal = {
+        attack = "Deauthentication attack",
+        target = "802.11 management frames (Layer 2), which WPA2 does not authenticate by default",
+        cia = "Availability",
+        technique = "MITRE ATT&CK: Network Denial of Service (T1498)",
+        lesson = "t4-01-wifi-recon",
+      },
+    },
+    {
+      symptom = "After the drops, two staff report the Wi-Fi login page 'looked different' and asked for their email password.",
+      damage = { uptime = 0, data = 50 },
+      evidence = {
+        { name = "Nearby networks", cost = 1,
+          text = "Two networks named 'Office-Guest': yours (WPA2) and a second one, open, with a stronger signal." },
+        { name = "Staff interview", cost = 1,
+          text = "Both joined 'Office-Guest' from the list without a password prompt, then saw a sign-in page." },
+        { name = "Mail server logs", cost = 2,
+          text = "One account logged in from an unknown IP ten minutes later." },
+      },
+      defenses = {
+        { name = "Reset passwords, enable MFA, train staff on rogue APs", result = "stop",
+          text = "Stolen passwords are useless with MFA, and staff learn to never type credentials into a Wi-Fi page." },
+        { name = "Hide the guest SSID", result = "fail",
+          text = "Hidden SSIDs are still visible to scanners, and attackers can still clone the name." },
+        { name = "Reset only the account that was used", result = "partial",
+          text = "Fixes one account, but the second victim and future victims are still exposed." },
+      },
+      reveal = {
+        attack = "Evil twin with a captive-portal phishing page",
+        target = "Users' trust in a familiar network name, and their reused credentials",
+        cia = "Confidentiality",
+        technique = "MITRE ATT&CK: Adversary-in-the-Middle (T1557) and Phishing (T1566)",
+        lesson = "t4-01-wifi-recon",
+      },
+    },
+  },
+}

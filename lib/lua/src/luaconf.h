@@ -122,7 +122,10 @@
 /*
 @@ LUA_32BITS enables Lua with 32-bit integers and 32-bit floats.
 */
+/* CardLab: allow -DLUA_32BITS=1 from the build (used on the ESP32). */
+#ifndef LUA_32BITS
 #define LUA_32BITS	0
+#endif
 
 
 /*

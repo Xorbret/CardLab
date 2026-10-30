@@ -53,6 +53,7 @@ class App {
   void askWifiPassword(const std::string& ssid);
   void runUpdate();
   void showError(const std::string& title, const std::string& message);
+  void showText(const std::string& title, const std::string& text, ui::Tone tone);
 
   CardputerHal hal_;
   Progress progress_;
@@ -62,16 +63,44 @@ class App {
   bool dirty_ = true;
 };
 
+// The home screen: one large card per section, moved through with , and /.
+class HomeView : public View {
+ public:
+  struct Item {
+    int icon;
+    std::string label, blurb;
+    ui::Tone tone;
+  };
+  HomeView(App& app, std::vector<Item> items, std::function<void(int)> onSelect);
+  void draw() override;
+  void key(const Key& k) override;
+
+ private:
+  App& app_;
+  std::vector<Item> items_;
+  std::function<void(int)> onSelect_;
+  int sel_ = 0;
+};
+
+// Icons for the home screen, drawn from shapes so they cost no flash.
+enum Icon { kIconBook, kIconShield, kIconTerminal, kIconGear, kIconDownload, kIconInfo };
+void drawIcon(LovyanGFX& g, int icon, int cx, int cy, int r, uint16_t color, uint16_t bg);
+
 // A scrollable list. Enter calls onSelect(index); Esc pops unless onBack
-// is set.
+// is set. `details` adds short right-aligned notes (a score, "done").
 class MenuView : public View {
  public:
   MenuView(App& app, std::string title, std::vector<std::string> items, std::function<void(int)> onSelect);
   void draw() override;
   void key(const Key& k) override;
   std::function<void()> onBack;
+  std::vector<std::string> details;
+  ui::Tone tone = ui::Tone::Normal;
+  // Optional strip drawn above the list (the game's status readout).
+  std::function<void(LovyanGFX&, int y)> hud;
 
  private:
+  int rows() const;
   App& app_;
   std::string title_;
   std::vector<std::string> items_;
@@ -80,19 +109,23 @@ class MenuView : public View {
 };
 
 // Read-only text with scrolling. Enter or Esc calls onDone (default: pop).
+// Tab switches between normal and large text for every reader.
 class TextView : public View {
  public:
-  TextView(App& app, std::string title, const std::string& text, std::function<void()> onDone = nullptr);
+  TextView(App& app, std::string title, std::string text, std::function<void()> onDone = nullptr);
   void draw() override;
   void key(const Key& k) override;
-  std::string hintText = "; . scroll  Enter: next";
+  std::string hintText = "Enter next";
+  ui::Tone tone = ui::Tone::Normal;
 
  private:
+  void layout();
   App& app_;
-  std::string title_;
+  std::string title_, text_;
   std::vector<std::string> lines_;
   std::function<void()> onDone_;
   int top_ = 0;
+  bool large_ = false;  // the layout that lines_ was wrapped for
 };
 
 // Line-based code editor. Tab calls onRun(code); Esc pops.
@@ -108,11 +141,11 @@ class EditorView : public View {
   std::string title_;
   std::vector<std::string> lines_;
   std::function<void(const std::string&)> onRun_;
-  int row_ = 0, col_ = 0, top_ = 0;
+  int row_ = 0, col_ = 0, top_ = 0, left_ = 0;
 };
 
 // Single-line text entry. Enter calls onDone(text); Esc pops. Masked input
-// shows asterisks; Tab toggles showing the text.
+// shows dots; Tab toggles showing the text.
 class InputView : public View {
  public:
   InputView(App& app, std::string title, std::string prompt, bool masked,
@@ -138,6 +171,7 @@ class ConsoleView : public View {
   App& app_;
   Sandbox box_;
   std::string input_;
+  // Output lines; a leading '>' marks an echoed command, '!' an error.
   std::vector<std::string> lines_;
 };
 

@@ -1,0 +1,11 @@
+{
+  "name": "lua",
+  "version": "5.4.7",
+  "description": "Lua 5.4.7 core, vendored from github.com/lua/lua (tag v5.4.7). os, io, package and the standalone interpreter are left out on purpose.",
+  "license": "MIT",
+  "build": {
+    "srcDir": "src",
+    "includeDir": "src",
+    "flags": ["-Wno-unused-function"]
+  }
+}
